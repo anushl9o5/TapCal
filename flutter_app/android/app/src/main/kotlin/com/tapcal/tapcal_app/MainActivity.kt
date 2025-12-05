@@ -186,7 +186,25 @@ class MainActivity : FlutterActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Clean up any stale screenshot files from previous sessions
+        cleanupScreenshotFiles()
         handleIntent(intent)
+    }
+    
+    private fun cleanupScreenshotFiles() {
+        try {
+            val cacheDir = cacheDir
+            val screenshotFiles = cacheDir.listFiles { file ->
+                file.name.contains("screenshot") && file.extension == "jpg"
+            }
+            screenshotFiles?.forEach { file ->
+                if (file.delete()) {
+                    println("[MainActivity] 🗑️ Cleaned up stale screenshot: ${file.name}")
+                }
+            }
+        } catch (e: Exception) {
+            println("[MainActivity] Error cleaning up screenshots: ${e.message}")
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -228,6 +246,12 @@ class MainActivity : FlutterActivity() {
                                 val bytes = file.readBytes()
                                 val base64Image = Base64.encodeToString(bytes, Base64.NO_WRAP)
                                 println("[MainActivity] Screenshot loaded: ${base64Image.length} chars from ${file.length() / 1024}KB file")
+                                
+                                // PRIVACY: Delete screenshot file immediately after reading
+                                if (file.delete()) {
+                                    println("[MainActivity] 🗑️ Screenshot file deleted for privacy")
+                                }
+                                
                                 onScreenCaptured(base64Image)
                             } else {
                                 println("[MainActivity] Screenshot file not found: $filePath")
@@ -235,6 +259,8 @@ class MainActivity : FlutterActivity() {
                             }
                         } catch (e: Exception) {
                             println("[MainActivity] Error reading screenshot: ${e.message}")
+                            // Try to delete file even on error
+                            try { java.io.File(filePath).delete() } catch (_: Exception) {}
                             TapCalAccessibilityService.instance?.showButton()
                         }
                     } else {
