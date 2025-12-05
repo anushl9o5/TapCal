@@ -1,0 +1,5 @@
+{
+  "name": "TapCal - AI Calendar Assistant",
+  "description": "A prototype of an Android utility that uses Gemini to analyze screen content via triple-tap gestures and automatically create calendar events.",
+  "requestFramePermissions": []
+}

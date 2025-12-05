@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TapCal Backend API Tester</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+    
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 20px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      overflow: hidden;
+    }
+    
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 30px;
+      text-align: center;
+    }
+    
+    .header h1 {
+      font-size: 2rem;
+      margin-bottom: 10px;
+    }
+    
+    .header p {
+      opacity: 0.9;
+    }
+    
+    .content {
+      padding: 30px;
+    }
+    
+    .section {
+      margin-bottom: 30px;
+    }
+    
+    .section h2 {
+      font-size: 1.3rem;
+      margin-bottom: 15px;
+      color: #333;
+    }
+    
+    .input-group {
+      margin-bottom: 15px;
+    }
+    
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 500;
+      color: #555;
+    }
+    
+    input[type="text"],
+    input[type="file"] {
+      width: 100%;
+      padding: 12px;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 1rem;
+      transition: border-color 0.3s;
+    }
+    
+    input[type="text"]:focus,
+    input[type="file"]:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+    
+    button {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      padding: 14px 28px;
+      font-size: 1rem;
+      font-weight: 600;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+      width: 100%;
+    }
+    
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+    }
+    
+    button:active {
+      transform: translateY(0);
+    }
+    
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+    
+    .preview {
+      margin-top: 15px;
+      border: 2px dashed #e0e0e0;
+      border-radius: 8px;
+      padding: 20px;
+      text-align: center;
+      background: #f9f9f9;
+    }
+    
+    .preview img {
+      max-width: 100%;
+      max-height: 300px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    
+    .result {
+      margin-top: 20px;
+      padding: 20px;
+      border-radius: 8px;
+      border: 2px solid #e0e0e0;
+      background: #f9f9f9;
+    }
+    
+    .result.success {
+      border-color: #4caf50;
+      background: #e8f5e9;
+    }
+    
+    .result.error {
+      border-color: #f44336;
+      background: #ffebee;
+    }
+    
+    .result h3 {
+      margin-bottom: 15px;
+      color: #333;
+    }
+    
+    .event-card {
+      background: white;
+      padding: 15px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    
+    .event-field {
+      margin-bottom: 10px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    
+    .event-field:last-child {
+      border-bottom: none;
+      margin-bottom: 0;
+      padding-bottom: 0;
+    }
+    
+    .event-field strong {
+      display: inline-block;
+      width: 120px;
+      color: #667eea;
+    }
+    
+    .loading {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 3px solid rgba(255,255,255,.3);
+      border-radius: 50%;
+      border-top-color: white;
+      animation: spin 1s ease-in-out infinite;
+      margin-left: 10px;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    
+    .status-badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-left: 10px;
+    }
+    
+    .status-badge.online {
+      background: #4caf50;
+      color: white;
+    }
+    
+    .status-badge.offline {
+      background: #f44336;
+      color: white;
+    }
+    
+    pre {
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 15px;
+      border-radius: 8px;
+      overflow-x: auto;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🧪 TapCal API Tester</h1>
+      <p>Test your backend API with real images</p>
+    </div>
+    
+    <div class="content">
+      <!-- Configuration Section -->
+      <div class="section">
+        <h2>⚙️ Configuration</h2>
+        <div class="input-group">
+          <label>Backend URL:</label>
+          <input type="text" id="backendUrl" value="http://localhost:3000" placeholder="http://localhost:3000">
+        </div>
+        <button onclick="testHealth()">Test Connection</button>
+        <div id="healthResult"></div>
+      </div>
+      
+      <!-- Image Upload Section -->
+      <div class="section">
+        <h2>📸 Test Image Analysis</h2>
+        <div class="input-group">
+          <label>Select an image to analyze:</label>
+          <input type="file" id="imageInput" accept="image/*" onchange="previewImage()">
+        </div>
+        
+        <div id="preview" class="preview" style="display: none;">
+          <img id="previewImg" src="" alt="Preview">
+        </div>
+        
+        <button id="analyzeBtn" onclick="analyzeImage()" disabled>Analyze Image</button>
+        
+        <div id="analyzeResult"></div>
+      </div>
+    </div>
+  </div>
+  
+  <script>
+    let selectedImage = null;
+    
+    // Preview selected image
+    function previewImage() {
+      const input = document.getElementById('imageInput');
+      const preview = document.getElementById('preview');
+      const previewImg = document.getElementById('previewImg');
+      const analyzeBtn = document.getElementById('analyzeBtn');
+      
+      if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        
+        reader.onload = function(e) {
+          selectedImage = e.target.result;
+          previewImg.src = selectedImage;
+          preview.style.display = 'block';
+          analyzeBtn.disabled = false;
+        };
+        
+        reader.readAsDataURL(input.files[0]);
+      }
+    }
+    
+    // Test health endpoint
+    async function testHealth() {
+      const url = document.getElementById('backendUrl').value;
+      const resultDiv = document.getElementById('healthResult');
+      
+      resultDiv.innerHTML = '<p style="text-align: center; margin-top: 15px;">Testing connection...</p>';
+      
+      try {
+        const response = await fetch(`${url}/api/health`);
+        const data = await response.json();
+        
+        if (response.ok) {
+          resultDiv.innerHTML = `
+            <div class="result success" style="margin-top: 15px;">
+              <h3>✅ Backend is running <span class="status-badge online">ONLINE</span></h3>
+              <pre>${JSON.stringify(data, null, 2)}</pre>
+            </div>
+          `;
+        } else {
+          resultDiv.innerHTML = `
+            <div class="result error" style="margin-top: 15px;">
+              <h3>❌ Connection failed</h3>
+              <pre>${JSON.stringify(data, null, 2)}</pre>
+            </div>
+          `;
+        }
+      } catch (error) {
+        resultDiv.innerHTML = `
+          <div class="result error" style="margin-top: 15px;">
+            <h3>❌ Cannot connect to backend <span class="status-badge offline">OFFLINE</span></h3>
+            <p><strong>Error:</strong> ${error.message}</p>
+            <p style="margin-top: 10px;">Make sure the backend is running:</p>
+            <pre>cd backend
+npm run dev</pre>
+          </div>
+        `;
+      }
+    }
+    
+    // Analyze image
+    async function analyzeImage() {
+      if (!selectedImage) {
+        alert('Please select an image first');
+        return;
+      }
+      
+      const url = document.getElementById('backendUrl').value;
+      const resultDiv = document.getElementById('analyzeResult');
+      const analyzeBtn = document.getElementById('analyzeBtn');
+      
+      // Show loading
+      analyzeBtn.innerHTML = 'Analyzing... <span class="loading"></span>';
+      analyzeBtn.disabled = true;
+      resultDiv.innerHTML = '<p style="text-align: center; margin-top: 15px;">🤖 Sending to Gemini AI...</p>';
+      
+      try {
+        // Remove data URI prefix for backend
+        const base64Image = selectedImage.split(',')[1] || selectedImage;
+        
+        const startTime = Date.now();
+        const response = await fetch(`${url}/api/analyze`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            image: base64Image,
+            context: 'upload'
+          }),
+        });
+        
+        const duration = Date.now() - startTime;
+        const data = await response.json();
+        
+        if (response.ok && data.success && data.event) {
+          resultDiv.innerHTML = `
+            <div class="result success">
+              <h3>✅ Event Detected (${duration}ms)</h3>
+              <div class="event-card">
+                <div class="event-field">
+                  <strong>📅 Title:</strong> ${data.event.title}
+                </div>
+                <div class="event-field">
+                  <strong>📆 Date:</strong> ${data.event.date}
+                </div>
+                <div class="event-field">
+                  <strong>🕐 Time:</strong> ${data.event.time}
+                </div>
+                ${data.event.location ? `
+                <div class="event-field">
+                  <strong>📍 Location:</strong> ${data.event.location}
+                </div>
+                ` : ''}
+                ${data.event.description ? `
+                <div class="event-field">
+                  <strong>📝 Description:</strong> ${data.event.description}
+                </div>
+                ` : ''}
+              </div>
+            </div>
+          `;
+        } else if (response.ok && !data.success) {
+          resultDiv.innerHTML = `
+            <div class="result error">
+              <h3>⚠️ No Event Detected</h3>
+              <p>${data.error || 'The image does not appear to contain calendar-related information.'}</p>
+            </div>
+          `;
+        } else {
+          resultDiv.innerHTML = `
+            <div class="result error">
+              <h3>❌ Analysis Failed</h3>
+              <pre>${JSON.stringify(data, null, 2)}</pre>
+            </div>
+          `;
+        }
+      } catch (error) {
+        resultDiv.innerHTML = `
+          <div class="result error">
+            <h3>❌ Error</h3>
+            <p>${error.message}</p>
+          </div>
+        `;
+      } finally {
+        analyzeBtn.innerHTML = 'Analyze Image';
+        analyzeBtn.disabled = false;
+      }
+    }
+    
+    // Auto-test connection on load
+    window.addEventListener('load', () => {
+      testHealth();
+    });
+  </script>
+</body>
+</html>
+
