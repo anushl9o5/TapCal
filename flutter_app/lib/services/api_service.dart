@@ -1,0 +1,58 @@
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import '../models/calendar_event.dart';
+
+/// Service for communicating with the TapCal backend API
+class ApiService {
+  static const String baseUrl = 'https://tap-cal-git-main-anush-kumars-projects-fdf1b16c.vercel.app';
+
+  static Future<bool> healthCheck() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/health'),
+      ).timeout(const Duration(seconds: 10));
+      return response.statusCode == 200;
+    } catch (e) {
+      print('[API] Health check failed: $e');
+      return false;
+    }
+  }
+
+  static Future<CalendarEvent?> analyzeImage(String base64Image, {String context = 'upload'}) async {
+    try {
+      print('[API] Sending image for analysis...');
+      final startTime = DateTime.now();
+      
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/analyze'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'image': base64Image,
+          'context': context,
+        }),
+      ).timeout(const Duration(seconds: 30));
+
+      final duration = DateTime.now().difference(startTime);
+      print('[API] Response received in ${duration.inMilliseconds}ms');
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['event'] != null) {
+          final event = CalendarEvent.fromJson(data['event']);
+          print('[API] Event detected: ${event.title}');
+          return event;
+        } else {
+          print('[API] No event detected: ${data['error']}');
+          return null;
+        }
+      } else {
+        print('[API] Error response: ${response.statusCode}');
+        throw Exception('API error: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('[API] Request failed: $e');
+      rethrow;
+    }
+  }
+}
+
