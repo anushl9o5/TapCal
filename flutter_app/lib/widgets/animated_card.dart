@@ -288,3 +288,4 @@ class _ShimmerEffectState extends State<ShimmerEffect>
   }
 }
 
+
