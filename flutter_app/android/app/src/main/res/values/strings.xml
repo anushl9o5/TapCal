@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TapCal</string>
+    <string name="accessibility_service_description">
+        TapCal uses accessibility to detect triple-tap gestures anywhere on your phone. 
+        When you triple-tap, TapCal captures the screen and uses AI to detect calendar events 
+        from the text you tapped on. Your data stays private and is only used for event detection.
+    </string>
+</resources>
+

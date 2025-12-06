@@ -16,40 +16,53 @@ console.log(`[Gemini] Initializing with API key: ${apiKey ? `${apiKey.substring(
 const ai = new GoogleGenAI({ apiKey: apiKey || "" });
 
 /**
- * Analyzes a cropped screen region and extracts calendar event details
+ * Analyzes a screen image and extracts ALL calendar events found
  * @param base64Image - Base64 encoded image (with or without data URI prefix)
- * @returns CalendarEvent object or null if no event detected
+ * @returns Array of CalendarEvent objects (empty if none detected)
  */
-export const analyzeScreenRegion = async (
+export const analyzeScreenForEvents = async (
   base64Image: string
-): Promise<CalendarEvent | null> => {
+): Promise<CalendarEvent[]> => {
   try {
     // Remove data URI header if present (data:image/png;base64,...)
     const cleanBase64 = base64Image.includes(',')
       ? base64Image.split(',')[1]
       : base64Image;
 
-    console.log('[Gemini] Starting analysis...');
+    console.log('[Gemini] Starting multi-event analysis...');
     
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-2.0-flash",
       contents: {
         parts: [
           {
             inlineData: {
-              mimeType: "image/png",
+              mimeType: "image/jpeg",
               data: cleanBase64,
             },
           },
           {
-            text: `Analyze this image crop from a phone screen. The user triple-tapped here to save an event. 
-            Extract event details. 
-            - If a date is mentioned (e.g., "tomorrow", "next friday"), convert it to YYYY-MM-DD based on today being ${new Date().toISOString().split('T')[0]}.
-            - If no title is clear, infer one from context (e.g. "Meeting with Sarah").
-            - If no time is found, default to "09:00".
-            - If nothing looks like an event, return null for values.
-            - Look for any text that mentions dates, times, appointments, meetings, deadlines, or events.
-            - Be generous in detecting potential calendar items.`,
+            text: `Analyze this screenshot and extract ALL calendar events or potential events visible.
+            
+Today's date is: ${new Date().toISOString().split('T')[0]}
+
+Look for:
+- Meetings, appointments, events with dates/times
+- Deadlines, due dates
+- Social gatherings, parties, dinners
+- Movie times, show times, reservations
+- Flight times, travel plans
+- Any text that mentions a specific date, time, or scheduled activity
+
+For EACH event found:
+- title: Clear event name (infer if not explicit, e.g. "Meeting with John")
+- date: In YYYY-MM-DD format (convert relative dates like "tomorrow", "next Friday")
+- time: In HH:MM format (24h). Default to "12:00" if no time mentioned
+- location: Venue/address if mentioned (can be empty)
+- description: Brief context from surrounding text (can be empty)
+
+Return ALL events you can find. If there's an event list, return each one.
+If no events are detected, return an empty array.`,
           },
         ],
       },
@@ -58,39 +71,61 @@ export const analyzeScreenRegion = async (
         responseSchema: {
           type: Type.OBJECT,
           properties: {
-            title: { type: Type.STRING },
-            date: { type: Type.STRING },
-            time: { type: Type.STRING },
-            location: { type: Type.STRING },
-            description: { type: Type.STRING },
+            events: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  title: { type: Type.STRING },
+                  date: { type: Type.STRING },
+                  time: { type: Type.STRING },
+                  location: { type: Type.STRING },
+                  description: { type: Type.STRING },
+                },
+                required: ["title", "date", "time"],
+              },
+            },
           },
-          required: ["title", "date", "time"],
+          required: ["events"],
         },
         systemInstruction:
-          "You are a helpful Android OS assistant extracting calendar details from screen content. Be proactive in detecting events.",
+          "You are an expert at detecting calendar events from screenshots. Extract ALL events visible, be thorough. Return events in a JSON array. If multiple events are listed, return each separately.",
       },
     });
 
     const text = response.text;
     if (!text) {
       console.log('[Gemini] No response text received');
-      return null;
+      return [];
     }
 
-    const parsedEvent = JSON.parse(text) as CalendarEvent;
-    console.log('[Gemini] Event extracted:', parsedEvent);
+    const parsed = JSON.parse(text) as { events: CalendarEvent[] };
+    console.log(`[Gemini] Found ${parsed.events?.length || 0} events`);
+    
+    // Filter out invalid events
+    const validEvents = (parsed.events || []).filter(event => 
+      event.title && 
+      event.title !== "null" && 
+      event.title.trim() !== "" &&
+      event.date &&
+      event.date !== "null"
+    );
 
-    // Validate that we got meaningful data
-    if (!parsedEvent.title || parsedEvent.title === "null") {
-      console.log('[Gemini] No valid event detected');
-      return null;
-    }
+    console.log(`[Gemini] ${validEvents.length} valid events after filtering`);
+    validEvents.forEach((e, i) => console.log(`  [${i + 1}] ${e.title} - ${e.date} ${e.time}`));
 
-    return parsedEvent;
+    return validEvents;
 
   } catch (error) {
     console.error("[Gemini] Analysis failed:", error);
-    throw error; // Let the route handler deal with it
+    throw error;
   }
 };
 
+// Legacy single-event function for backwards compatibility
+export const analyzeScreenRegion = async (
+  base64Image: string
+): Promise<CalendarEvent | null> => {
+  const events = await analyzeScreenForEvents(base64Image);
+  return events.length > 0 ? events[0] : null;
+};

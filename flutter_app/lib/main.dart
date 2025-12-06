@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/home_screen.dart';
+import 'screens/onboarding_screen.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
   // Set status bar style
@@ -13,11 +15,17 @@ void main() {
     ),
   );
   
-  runApp(const TapCalApp());
+  // Check if onboarding is complete
+  final prefs = await SharedPreferences.getInstance();
+  final onboardingComplete = prefs.getBool('onboarding_complete') ?? false;
+  
+  runApp(TapCalApp(showOnboarding: !onboardingComplete));
 }
 
 class TapCalApp extends StatelessWidget {
-  const TapCalApp({super.key});
+  final bool showOnboarding;
+  
+  const TapCalApp({super.key, required this.showOnboarding});
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +36,7 @@ class TapCalApp extends StatelessWidget {
         useMaterial3: true,
         fontFamily: 'SF Pro Display',
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF6366F1), // Indigo
+          seedColor: const Color(0xFF6366F1),
           brightness: Brightness.light,
         ),
         scaffoldBackgroundColor: const Color(0xFFF8FAFC),
@@ -54,7 +62,7 @@ class TapCalApp extends StatelessWidget {
           ),
         ),
       ),
-      home: const HomeScreen(),
+      home: showOnboarding ? const OnboardingScreen() : const HomeScreen(),
     );
   }
 }

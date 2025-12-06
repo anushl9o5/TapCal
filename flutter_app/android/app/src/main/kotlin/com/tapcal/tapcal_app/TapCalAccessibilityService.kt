@@ -87,36 +87,72 @@ class TapCalAccessibilityService : AccessibilityService() {
         println("[TapCal] Floating button ready!")
         println("[TapCal] Tap the button to capture any screen")
         println("[TapCal] ========================================")
+        
+        // Auto-return to TapCal app after enabling accessibility
+        bringAppToForeground()
+    }
+    
+    private fun bringAppToForeground() {
+        try {
+            val intent = Intent(this, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+            }
+            startActivity(intent)
+            println("[TapCal] Returning to TapCal app...")
+        } catch (e: Exception) {
+            println("[TapCal] Could not bring app to foreground: ${e.message}")
+        }
     }
 
     @SuppressLint("ClickableViewAccessibility")
     private fun createFloatingButton() {
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         
-        // Create button container
+        // Create button container with pulse glow effect
         val container = FrameLayout(this)
         
-        // Create the circular button
+        // Outer glow ring for pulse effect
+        val glowRing = View(this).apply {
+            val glowSize = 130
+            layoutParams = FrameLayout.LayoutParams(glowSize, glowSize).apply {
+                gravity = Gravity.CENTER
+            }
+            val glowShape = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(0x006366F1.toInt()) // Transparent center
+                setStroke(4, 0x406366F1.toInt()) // Subtle glow border
+            }
+            background = glowShape
+            alpha = 0f
+        }
+        container.addView(glowRing)
+        
+        // Create the circular button with transparency
         val button = ImageView(this).apply {
-            val size = 140
-            layoutParams = FrameLayout.LayoutParams(size, size)
+            val size = 110
+            layoutParams = FrameLayout.LayoutParams(size, size).apply {
+                gravity = Gravity.CENTER
+            }
             
-            // Circular blue background
+            // Semi-transparent circular background (70% opacity)
             val shape = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(0xFF1976D2.toInt()) // Blue
-                setStroke(6, 0xFFFFFFFF.toInt()) // White border
+                setColor(0xB36366F1.toInt()) // Indigo with 70% opacity
+                setStroke(2, 0x99FFFFFF.toInt()) // White border with 60% opacity
             }
             background = shape
             
-            // Calendar icon
-            setImageResource(android.R.drawable.ic_menu_my_calendar)
+            // Camera/capture icon
+            setImageResource(android.R.drawable.ic_menu_camera)
             setColorFilter(0xFFFFFFFF.toInt())
             scaleType = ImageView.ScaleType.CENTER
-            setPadding(35, 35, 35, 35)
+            setPadding(28, 28, 28, 28)
         }
-        
         container.addView(button)
+        
+        // Start subtle pulse animation on the glow ring
+        startButtonPulseAnimation(glowRing)
+        
         floatingButton = container
         
         val layoutFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -127,8 +163,8 @@ class TapCalAccessibilityService : AccessibilityService() {
         }
         
         buttonParams = WindowManager.LayoutParams(
-            160,
-            160,
+            130,
+            130,
             layoutFlag,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
@@ -170,10 +206,55 @@ class TapCalAccessibilityService : AccessibilityService() {
         
         try {
             windowManager?.addView(floatingButton, buttonParams)
-            println("[TapCal] Floating button created")
+            println("[TapCal] Floating button created with pulse animation")
         } catch (e: Exception) {
             println("[TapCal] Failed to create button: ${e.message}")
         }
+    }
+    
+    private fun startButtonPulseAnimation(glowRing: View) {
+        // Create a subtle pulse animation that loops
+        val pulseIn = glowRing.animate()
+            .alpha(0.6f)
+            .scaleX(1.15f)
+            .scaleY(1.15f)
+            .setDuration(1200)
+            
+        val runPulse = object : Runnable {
+            var expanding = true
+            override fun run() {
+                if (floatingButton?.visibility != View.VISIBLE) {
+                    glowRing.alpha = 0f
+                    return
+                }
+                
+                if (expanding) {
+                    glowRing.animate()
+                        .alpha(0.5f)
+                        .scaleX(1.2f)
+                        .scaleY(1.2f)
+                        .setDuration(1000)
+                        .withEndAction { 
+                            expanding = false
+                            handler.post(this)
+                        }
+                        .start()
+                } else {
+                    glowRing.animate()
+                        .alpha(0f)
+                        .scaleX(1.0f)
+                        .scaleY(1.0f)
+                        .setDuration(1000)
+                        .withEndAction { 
+                            expanding = true
+                            handler.postDelayed(this, 500) // Pause between pulses
+                        }
+                        .start()
+                }
+            }
+        }
+        
+        handler.postDelayed(runPulse, 500)
     }
 
     private fun onFloatingButtonClick() {
@@ -227,9 +308,10 @@ class TapCalAccessibilityService : AccessibilityService() {
                                     bitmap.recycle()
                                     hardwareBuffer.close()
                                     
-                                    // Store bitmap and show overlay for tap selection
+                                    // Process full screenshot directly (no tap selection needed)
                                     capturedBitmap = softwareBitmap
-                                    showScreenshotOverlay(softwareBitmap)
+                                    showQuickCaptureAnimation()
+                                    processFullScreenshot(softwareBitmap)
                                 } else {
                                     println("[TapCal] Failed to create bitmap from buffer")
                                     showButton()
@@ -270,11 +352,10 @@ class TapCalAccessibilityService : AccessibilityService() {
                 @Suppress("DEPRECATION")
                 wm.defaultDisplay.getRealMetrics(metrics)
                 
-                // Create container
+                // Create main container
                 val container = FrameLayout(this)
-                container.setBackgroundColor(Color.BLACK)
                 
-                // Add screenshot as background
+                // Add screenshot as background with slight dim
                 val imageView = ImageView(this).apply {
                     layoutParams = FrameLayout.LayoutParams(
                         FrameLayout.LayoutParams.MATCH_PARENT,
@@ -282,65 +363,206 @@ class TapCalAccessibilityService : AccessibilityService() {
                     )
                     setImageBitmap(bitmap)
                     scaleType = ImageView.ScaleType.FIT_XY
+                    // Slight dim to show it's a capture
+                    alpha = 0.95f
                 }
                 container.addView(imageView)
                 
-                // Add instruction text at top
-                val instructionText = TextView(this).apply {
-                    text = "👆 Tap on the event to analyze"
-                    setTextColor(Color.WHITE)
-                    textSize = 18f
-                    setPadding(32, 80, 32, 32)
-                    setBackgroundColor(0xAA000000.toInt())
+                // Semi-transparent overlay gradient at top
+                val topGradient = View(this).apply {
+                    layoutParams = FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        300
+                    ).apply {
+                        gravity = Gravity.TOP
+                    }
+                    val gradient = GradientDrawable(
+                        GradientDrawable.Orientation.TOP_BOTTOM,
+                        intArrayOf(0xDD1E293B.toInt(), 0x001E293B.toInt())
+                    )
+                    background = gradient
+                }
+                container.addView(topGradient)
+                
+                // Semi-transparent overlay gradient at bottom
+                val bottomGradient = View(this).apply {
+                    layoutParams = FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        350
+                    ).apply {
+                        gravity = Gravity.BOTTOM
+                    }
+                    val gradient = GradientDrawable(
+                        GradientDrawable.Orientation.BOTTOM_TOP,
+                        intArrayOf(0xEE1E293B.toInt(), 0x001E293B.toInt())
+                    )
+                    background = gradient
+                }
+                container.addView(bottomGradient)
+                
+                // Header container with icon and text
+                val headerContainer = FrameLayout(this).apply {
                     layoutParams = FrameLayout.LayoutParams(
                         FrameLayout.LayoutParams.MATCH_PARENT,
                         FrameLayout.LayoutParams.WRAP_CONTENT
                     ).apply {
                         gravity = Gravity.TOP
+                        topMargin = 60
+                        leftMargin = 24
+                        rightMargin = 24
                     }
                 }
-                container.addView(instructionText)
                 
-                // Add cancel button at bottom
-                val cancelText = TextView(this).apply {
-                    text = "✕ Cancel"
+                // Instruction pill/badge
+                val instructionBadge = TextView(this).apply {
+                    text = "  👆  Tap on event info to analyze  "
+                    setTextColor(Color.WHITE)
+                    textSize = 15f
+                    setPadding(48, 24, 48, 24)
+                    
+                    val pillBackground = GradientDrawable().apply {
+                        shape = GradientDrawable.RECTANGLE
+                        cornerRadius = 50f
+                        setColor(0xCC6366F1.toInt()) // Indigo with transparency
+                    }
+                    background = pillBackground
+                    
+                    layoutParams = FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.WRAP_CONTENT,
+                        FrameLayout.LayoutParams.WRAP_CONTENT
+                    ).apply {
+                        gravity = Gravity.CENTER_HORIZONTAL
+                    }
+                }
+                headerContainer.addView(instructionBadge)
+                container.addView(headerContainer)
+                
+                // Bottom action area
+                val bottomContainer = FrameLayout(this).apply {
+                    layoutParams = FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.WRAP_CONTENT
+                    ).apply {
+                        gravity = Gravity.BOTTOM
+                        bottomMargin = 50
+                        leftMargin = 24
+                        rightMargin = 24
+                    }
+                }
+                
+                // Cancel button with modern styling
+                val cancelButton = TextView(this).apply {
+                    text = "Cancel"
                     setTextColor(Color.WHITE)
                     textSize = 16f
-                    setPadding(48, 32, 48, 80)
-                    setBackgroundColor(0xAA000000.toInt())
+                    setPadding(64, 18, 64, 18)
+                    
+                    val buttonBackground = GradientDrawable().apply {
+                        shape = GradientDrawable.RECTANGLE
+                        cornerRadius = 30f
+                        setColor(0x40FFFFFF.toInt()) // White with low opacity
+                        setStroke(2, 0x60FFFFFF.toInt())
+                    }
+                    background = buttonBackground
+                    
+                    layoutParams = FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.WRAP_CONTENT,
+                        FrameLayout.LayoutParams.WRAP_CONTENT
+                    ).apply {
+                        gravity = Gravity.CENTER_HORIZONTAL
+                    }
+                    
+                    setOnClickListener {
+                        dismissScreenshotOverlay()
+                        showButton()
+                    }
+                }
+                bottomContainer.addView(cancelButton)
+                container.addView(bottomContainer)
+                
+                // Floating help text
+                val helpText = TextView(this).apply {
+                    text = "The area around your tap will be analyzed"
+                    setTextColor(0xAAFFFFFF.toInt())
+                    textSize = 12f
                     gravity = Gravity.CENTER
                     layoutParams = FrameLayout.LayoutParams(
                         FrameLayout.LayoutParams.MATCH_PARENT,
                         FrameLayout.LayoutParams.WRAP_CONTENT
                     ).apply {
                         gravity = Gravity.BOTTOM
-                    }
-                    setOnClickListener {
-                        dismissScreenshotOverlay()
-                        showButton()
+                        bottomMargin = 120
                     }
                 }
-                container.addView(cancelText)
+                container.addView(helpText)
                 
-                // Handle tap on screenshot
-                imageView.setOnTouchListener { _, event ->
-                    if (event.action == MotionEvent.ACTION_UP) {
-                        val tapX = event.x
-                        val tapY = event.y
-                        
-                        // Convert tap coordinates to bitmap coordinates
-                        val scaleX = bitmap.width.toFloat() / imageView.width
-                        val scaleY = bitmap.height.toFloat() / imageView.height
-                        val bitmapX = (tapX * scaleX).toInt()
-                        val bitmapY = (tapY * scaleY).toInt()
-                        
-                        println("[TapCal] Tap at screen: ($tapX, $tapY)")
-                        println("[TapCal] Tap at bitmap: ($bitmapX, $bitmapY)")
-                        
-                        // Crop and process
-                        cropAndProcessRegion(bitmap, bitmapX, bitmapY)
+                // Visual tap feedback indicator
+                var tapIndicator: View? = null
+                
+                // Handle tap on screenshot with visual feedback
+                imageView.setOnTouchListener { view, event ->
+                    when (event.action) {
+                        MotionEvent.ACTION_DOWN -> {
+                            // Show tap indicator at touch position
+                            tapIndicator = View(this).apply {
+                                val indicatorSize = 120
+                                layoutParams = FrameLayout.LayoutParams(indicatorSize, indicatorSize).apply {
+                                    leftMargin = (event.x - indicatorSize / 2).toInt()
+                                    topMargin = (event.y - indicatorSize / 2).toInt()
+                                }
+                                
+                                val ripple = GradientDrawable().apply {
+                                    shape = GradientDrawable.OVAL
+                                    setColor(0x406366F1.toInt())
+                                    setStroke(4, 0x806366F1.toInt())
+                                }
+                                background = ripple
+                                alpha = 0f
+                                
+                                // Animate in
+                                animate()
+                                    .alpha(1f)
+                                    .scaleX(1.3f)
+                                    .scaleY(1.3f)
+                                    .setDuration(150)
+                                    .start()
+                            }
+                            container.addView(tapIndicator)
+                            true
+                        }
+                        MotionEvent.ACTION_UP -> {
+                            val tapX = event.x
+                            val tapY = event.y
+                            
+                            // Animate tap indicator out and show processing
+                            tapIndicator?.animate()
+                                ?.alpha(0.8f)
+                                ?.scaleX(2f)
+                                ?.scaleY(2f)
+                                ?.setDuration(200)
+                                ?.withEndAction {
+                                    // Convert tap coordinates to bitmap coordinates
+                                    val scaleX = bitmap.width.toFloat() / imageView.width
+                                    val scaleY = bitmap.height.toFloat() / imageView.height
+                                    val bitmapX = (tapX * scaleX).toInt()
+                                    val bitmapY = (tapY * scaleY).toInt()
+                                    
+                                    println("[TapCal] Tap at screen: ($tapX, $tapY)")
+                                    println("[TapCal] Tap at bitmap: ($bitmapX, $bitmapY)")
+                                    
+                                    // Crop and process
+                                    cropAndProcessRegion(bitmap, bitmapX, bitmapY)
+                                }
+                                ?.start()
+                            true
+                        }
+                        MotionEvent.ACTION_CANCEL -> {
+                            // Remove indicator on cancel
+                            tapIndicator?.let { container.removeView(it) }
+                            true
+                        }
+                        else -> true
                     }
-                    true
                 }
                 
                 screenshotOverlay = container
@@ -382,10 +604,107 @@ class TapCalAccessibilityService : AccessibilityService() {
                 println("[TapCal] Error removing overlay: ${e.message}")
             }
             screenshotOverlay = null
-            isAnalyzing = false
         }
     }
     
+    /**
+     * Show a brief "captured" animation - just a quick flash
+     */
+    private fun showQuickCaptureAnimation() {
+        handler.post {
+            try {
+                val wm = getSystemService(WINDOW_SERVICE) as WindowManager
+                
+                // Simple flash overlay
+                val flashView = View(this).apply {
+                    setBackgroundColor(0x40FFFFFF.toInt())
+                    alpha = 0f
+                }
+                
+                val layoutFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+                } else {
+                    @Suppress("DEPRECATION")
+                    WindowManager.LayoutParams.TYPE_SYSTEM_ALERT
+                }
+                
+                val params = WindowManager.LayoutParams(
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    layoutFlag,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                    PixelFormat.TRANSLUCENT
+                )
+                
+                wm.addView(flashView, params)
+                
+                // Quick flash animation
+                flashView.animate()
+                    .alpha(1f)
+                    .setDuration(100)
+                    .withEndAction {
+                        flashView.animate()
+                            .alpha(0f)
+                            .setDuration(150)
+                            .withEndAction {
+                                try { wm.removeView(flashView) } catch (_: Exception) {}
+                            }
+                            .start()
+                    }
+                    .start()
+                    
+                println("[TapCal] 📸 Capture flash shown")
+            } catch (e: Exception) {
+                println("[TapCal] Flash animation error: ${e.message}")
+            }
+        }
+    }
+    
+    /**
+     * Process the full screenshot without cropping - analyze for multiple events
+     */
+    private fun processFullScreenshot(bitmap: Bitmap) {
+        println("[TapCal] Processing full screenshot for multiple events")
+        
+        try {
+            // Scale down for faster processing
+            val maxWidth = 1080
+            val scaledBitmap = if (bitmap.width > maxWidth) {
+                val scale = maxWidth.toFloat() / bitmap.width
+                val scaledHeight = (bitmap.height * scale).toInt()
+                Bitmap.createScaledBitmap(bitmap, maxWidth, scaledHeight, true)
+            } else {
+                bitmap
+            }
+            
+            // Save to file
+            val cacheDir = applicationContext.cacheDir
+            val file = java.io.File(cacheDir, "screenshot_${System.currentTimeMillis()}.jpg")
+            java.io.FileOutputStream(file).use { fos ->
+                scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 80, fos)
+            }
+            
+            println("[TapCal] Full screenshot saved: ${file.length() / 1024} KB")
+            
+            // Clean up bitmaps
+            if (scaledBitmap !== bitmap) {
+                scaledBitmap.recycle()
+            }
+            capturedBitmap?.recycle()
+            capturedBitmap = null
+            
+            // Launch app with full screenshot
+            launchAppWithScreenshotFile(file.absolutePath)
+            
+        } catch (e: Exception) {
+            println("[TapCal] Error processing screenshot: ${e.message}")
+            e.printStackTrace()
+            showButton()
+        }
+    }
+    
+    // Legacy function - kept for compatibility but no longer used
     private fun cropAndProcessRegion(bitmap: Bitmap, centerX: Int, centerY: Int) {
         println("[TapCal] Cropping horizontal strip around Y=$centerY")
         

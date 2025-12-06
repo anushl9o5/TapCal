@@ -1,12 +1,21 @@
 import { Router, Request, Response } from "express";
-import { analyzeScreenRegion } from "../services/gemini.js";
-import { AnalyzeRequest, AnalyzeResponse } from "../types/index.js";
+import { analyzeScreenForEvents, analyzeScreenRegion } from "../services/gemini.js";
+import { AnalyzeRequest, AnalyzeResponse, CalendarEvent } from "../types/index.js";
 
 const router = Router();
 
+// Extended response type for multiple events
+interface MultiEventResponse {
+  success: boolean;
+  events?: CalendarEvent[];
+  event?: CalendarEvent; // Legacy single event
+  error?: string;
+}
+
 /**
  * POST /api/analyze
- * Analyzes a cropped screen image and extracts calendar event details
+ * Analyzes a screen image and extracts ALL calendar events
+ * Returns: { success, events: CalendarEvent[], event: CalendarEvent (first one) }
  */
 router.post("/analyze", async (req: Request, res: Response) => {
   const startTime = Date.now();
@@ -16,7 +25,7 @@ router.post("/analyze", async (req: Request, res: Response) => {
 
     // Validation
     if (!image) {
-      const response: AnalyzeResponse = {
+      const response: MultiEventResponse = {
         success: false,
         error: "Missing 'image' field in request body",
       };
@@ -25,32 +34,34 @@ router.post("/analyze", async (req: Request, res: Response) => {
 
     // Basic base64 validation
     if (typeof image !== "string" || image.length < 100) {
-      const response: AnalyzeResponse = {
+      const response: MultiEventResponse = {
         success: false,
         error: "Invalid image data. Expected base64 encoded string.",
       };
       return res.status(400).json(response);
     }
 
-    console.log(`[API] Analyzing image (context: ${context || 'unknown'})...`);
+    console.log(`[API] Analyzing image for multiple events (context: ${context || 'screenshot'})...`);
 
-    // Call Gemini service
-    const event = await analyzeScreenRegion(image);
+    // Call Gemini service for multi-event detection
+    const events = await analyzeScreenForEvents(image);
 
     const duration = Date.now() - startTime;
-    console.log(`[API] Analysis completed in ${duration}ms`);
+    console.log(`[API] Analysis completed in ${duration}ms - Found ${events.length} events`);
 
-    if (!event) {
-      const response: AnalyzeResponse = {
+    if (events.length === 0) {
+      const response: MultiEventResponse = {
         success: false,
-        error: "No calendar event detected in the image",
+        events: [],
+        error: "No calendar events detected in the image",
       };
       return res.status(200).json(response);
     }
 
-    const response: AnalyzeResponse = {
+    const response: MultiEventResponse = {
       success: true,
-      event,
+      events,
+      event: events[0], // Legacy compatibility - first event
     };
 
     res.status(200).json(response);
@@ -58,8 +69,9 @@ router.post("/analyze", async (req: Request, res: Response) => {
   } catch (error) {
     console.error("[API] Error:", error);
     
-    const response: AnalyzeResponse = {
+    const response: MultiEventResponse = {
       success: false,
+      events: [],
       error: error instanceof Error ? error.message : "Internal server error",
     };
     
@@ -76,6 +88,7 @@ router.get("/health", (req: Request, res: Response) => {
     status: "healthy",
     timestamp: new Date().toISOString(),
     service: "TapCal Backend API",
+    version: "2.0.0", // Updated for multi-event support
   });
 });
 
@@ -106,4 +119,3 @@ router.get("/debug", (req: Request, res: Response) => {
 });
 
 export default router;
-
