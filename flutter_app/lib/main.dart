@@ -19,18 +19,18 @@ void main() async {
   final prefs = await SharedPreferences.getInstance();
   final onboardingComplete = prefs.getBool('onboarding_complete') ?? false;
   
-  runApp(TapCalApp(showOnboarding: !onboardingComplete));
+  runApp(SnapCalApp(showOnboarding: !onboardingComplete));
 }
 
-class TapCalApp extends StatelessWidget {
+class SnapCalApp extends StatelessWidget {
   final bool showOnboarding;
   
-  const TapCalApp({super.key, required this.showOnboarding});
+  const SnapCalApp({super.key, required this.showOnboarding});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'TapCal',
+      title: 'SnapCal',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,

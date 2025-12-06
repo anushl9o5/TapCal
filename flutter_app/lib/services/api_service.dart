@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/calendar_event.dart';
 
-/// Service for communicating with the TapCal backend API
+/// Service for communicating with the SnapCal backend API
 class ApiService {
   static const String baseUrl = 'https://tap-cal-git-main-anush-kumars-projects-fdf1b16c.vercel.app';
 
