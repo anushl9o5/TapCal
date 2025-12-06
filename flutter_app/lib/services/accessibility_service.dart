@@ -1,4 +1,5 @@
 import 'package:flutter/services.dart';
+import '../models/calendar_event.dart';
 
 /// Service for managing the Accessibility Service with floating button
 class AccessibilityService {
@@ -89,5 +90,26 @@ class AccessibilityService {
       print('[Accessibility] Error opening calendar: $e');
     }
   }
-}
 
+  /// Show detected events as swipeable cards overlay at the bottom of screen
+  /// This works as an overlay without leaving the current app
+  static Future<void> showEventsOverlay(List<CalendarEvent> events) async {
+    try {
+      // Convert events to list of maps for native
+      final eventsList = events.map((e) => {
+        'title': e.title,
+        'date': e.date,
+        'time': e.time,
+        'location': e.location ?? '',
+        'description': e.description ?? '',
+      }).toList();
+      
+      await _channel.invokeMethod('showEventsOverlay', {
+        'events': eventsList,
+      });
+      print('[Accessibility] Events overlay shown with ${events.length} events');
+    } catch (e) {
+      print('[Accessibility] Error showing events overlay: $e');
+    }
+  }
+}

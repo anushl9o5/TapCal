@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/loading_overlay.dart';
 import '../widgets/animated_card.dart';
 import '../services/api_service.dart';
@@ -9,6 +10,7 @@ import '../services/accessibility_service.dart';
 import '../models/calendar_event.dart';
 import '../models/event_history.dart';
 import 'settings_screen.dart';
+import 'events_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -25,10 +27,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, Ti
   bool _isAccessibilityEnabled = false;
   List<EventHistoryItem> _history = [];
   
-  // Detected events from last scan
-  List<CalendarEvent> _detectedEvents = [];
+  // Display mode: 'overlay' or 'app'
+  String _displayMode = 'overlay';
 
-  // Animation controllers
   late AnimationController _headerController;
   late Animation<double> _headerAnimation;
 
@@ -68,11 +69,25 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, Ti
     AccessibilityService.initialize();
     AccessibilityService.onScreenCaptured = _onScreenCaptured;
     
+    await _loadSettings();
     await _checkConnection();
     await _checkAccessibilityStatus();
     await _loadHistory();
     
     _headerController.forward();
+  }
+
+  Future<void> _loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _displayMode = prefs.getString('display_mode') ?? 'overlay';
+    });
+  }
+
+  Future<void> _setDisplayMode(String mode) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('display_mode', mode);
+    setState(() => _displayMode = mode);
   }
 
   Future<void> _checkConnection() async {
@@ -97,22 +112,45 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, Ti
 
   Future<void> _analyzeImageForEvents(String base64Image) async {
     if (_isAnalyzing) return;
-    setState(() {
-      _isAnalyzing = true;
-      _detectedEvents = [];
-    });
+    setState(() => _isAnalyzing = true);
 
     try {
       final events = await ApiService.analyzeImageForEvents(base64Image);
 
       if (mounted) {
-        setState(() {
-          _isAnalyzing = false;
-          _detectedEvents = events;
-        });
+        setState(() => _isAnalyzing = false);
 
         if (events.isNotEmpty) {
-          // Show success notification
+          // Choose display mode
+          if (_displayMode == 'overlay') {
+            // Show as native overlay (stay in current app)
+            await AccessibilityService.showEventsOverlay(events);
+          } else {
+            // Show in app (navigate to events screen)
+            if (mounted) {
+              Navigator.push(
+                context,
+                PageRouteBuilder(
+                  pageBuilder: (context, animation, secondaryAnimation) =>
+                      EventsScreen(events: events),
+                  transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                    return SlideTransition(
+                      position: Tween<Offset>(
+                        begin: const Offset(0.0, 1.0),
+                        end: Offset.zero,
+                      ).animate(CurvedAnimation(
+                        parent: animation,
+                        curve: Curves.easeOutCubic,
+                      )),
+                      child: child,
+                    );
+                  },
+                  transitionDuration: const Duration(milliseconds: 300),
+                ),
+              );
+            }
+          }
+          
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Row(
@@ -166,50 +204,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, Ti
     }
   }
 
-  Future<void> _addEventToCalendar(CalendarEvent event) async {
-    await AccessibilityService.openCalendarWithEvent(
-      title: event.title,
-      date: event.date,
-      time: event.time,
-      location: event.location,
-      description: event.description,
-    );
-    
-    // Save to history
-    await EventHistoryService.addEvent(event, saved: true);
-    await _loadHistory();
-    
-    // Remove from detected list
-    setState(() {
-      _detectedEvents.remove(event);
-    });
-    
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              const Icon(Icons.calendar_today, color: Colors.white, size: 18),
-              const SizedBox(width: 10),
-              Text('Adding: ${event.title}'),
-            ],
-          ),
-          backgroundColor: const Color(0xFF10B981),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          margin: const EdgeInsets.all(16),
-          duration: const Duration(seconds: 1),
-        ),
-      );
-    }
-  }
-
-  void _dismissEvent(CalendarEvent event) {
-    setState(() {
-      _detectedEvents.remove(event);
-    });
-  }
-
   Future<void> _pickAndAnalyzeImage() async {
     try {
       final XFile? image = await _imagePicker.pickImage(
@@ -246,37 +240,34 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, Ti
               padding: const EdgeInsets.all(20),
               sliver: SliverList(
                 delegate: SliverChildListDelegate([
-                  // Detected Events (priority display)
-                  if (_detectedEvents.isNotEmpty) ...[
-                    AnimatedCard(
-                      index: 0,
-                      child: _buildDetectedEventsCard(),
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-                  
                   AnimatedCard(
-                    index: _detectedEvents.isNotEmpty ? 1 : 0,
+                    index: 0,
                     child: _buildStatusCard(),
                   ),
                   const SizedBox(height: 16),
                   
                   AnimatedCard(
-                    index: _detectedEvents.isNotEmpty ? 2 : 1,
+                    index: 1,
+                    child: _buildDisplayModeCard(),
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  AnimatedCard(
+                    index: 2,
                     child: _buildHowToUseCard(),
                   ),
                   const SizedBox(height: 16),
                   
                   if (_history.isNotEmpty) ...[
                     AnimatedCard(
-                      index: _detectedEvents.isNotEmpty ? 3 : 2,
+                      index: 3,
                       child: _buildHistorySection(),
                     ),
                     const SizedBox(height: 16),
                   ],
                   
                   AnimatedCard(
-                    index: _detectedEvents.isNotEmpty ? 4 : 3,
+                    index: _history.isNotEmpty ? 4 : 3,
                     child: _buildPrivacyCard(),
                   ),
                   const SizedBox(height: 100),
@@ -290,20 +281,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, Ti
     );
   }
 
-  Widget _buildDetectedEventsCard() {
+  Widget _buildDisplayModeCard() {
     return Container(
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
-        ),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF6366F1).withOpacity(0.3),
+            color: Colors.black.withOpacity(0.04),
             blurRadius: 20,
-            offset: const Offset(0, 8),
+            offset: const Offset(0, 4),
           ),
         ],
       ),
@@ -312,166 +299,113 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver, Ti
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            const Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(Icons.event_available, color: Colors.white, size: 24),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Events Detected!',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Text(
-                        '${_detectedEvents.length} event${_detectedEvents.length > 1 ? 's' : ''} found',
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.8),
-                          fontSize: 13,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                TextButton(
-                  onPressed: () => setState(() => _detectedEvents = []),
-                  child: Text(
-                    'Clear',
-                    style: TextStyle(color: Colors.white.withOpacity(0.8)),
+                Icon(Icons.view_carousel_outlined, color: Color(0xFF6366F1)),
+                SizedBox(width: 10),
+                Text(
+                  'Display Mode',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF1E293B),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 16),
             
-            // Event cards
-            ...List.generate(_detectedEvents.length, (index) {
-              final event = _detectedEvents[index];
-              return _buildDetectedEventItem(event, index);
-            }),
+            // Overlay mode option
+            _buildModeOption(
+              icon: Icons.layers_outlined,
+              title: 'Quick Overlay',
+              description: 'Cards appear over current app',
+              isSelected: _displayMode == 'overlay',
+              onTap: () => _setDisplayMode('overlay'),
+            ),
+            
+            const SizedBox(height: 10),
+            
+            // App mode option
+            _buildModeOption(
+              icon: Icons.open_in_new,
+              title: 'Full Screen',
+              description: 'Opens events in TapCal app',
+              isSelected: _displayMode == 'app',
+              onTap: () => _setDisplayMode('app'),
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildDetectedEventItem(CalendarEvent event, int index) {
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0.0, end: 1.0),
-      duration: Duration(milliseconds: 300 + (index * 100)),
-      builder: (context, value, child) {
-        return Opacity(
-          opacity: value,
-          child: Transform.translate(
-            offset: Offset(0, 20 * (1 - value)),
-            child: child,
-          ),
-        );
-      },
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(16),
+  Widget _buildModeOption({
+    required IconData icon,
+    required String title,
+    required String description,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 2),
-            ),
-          ],
+          color: isSelected 
+              ? const Color(0xFF6366F1).withOpacity(0.1)
+              : const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected 
+                ? const Color(0xFF6366F1)
+                : Colors.transparent,
+            width: 2,
+          ),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    event.title,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                      color: Color(0xFF1E293B),
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                IconButton(
-                  onPressed: () => _dismissEvent(event),
-                  icon: Icon(Icons.close, color: Colors.grey[400], size: 20),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                ),
-              ],
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: isSelected 
+                    ? const Color(0xFF6366F1)
+                    : Colors.grey[200],
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                icon,
+                color: isSelected ? Colors.white : Colors.grey[600],
+                size: 20,
+              ),
             ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Icon(Icons.calendar_today, size: 14, color: Colors.grey[500]),
-                const SizedBox(width: 6),
-                Text(
-                  event.date,
-                  style: TextStyle(color: Colors.grey[600], fontSize: 13),
-                ),
-                const SizedBox(width: 16),
-                Icon(Icons.access_time, size: 14, color: Colors.grey[500]),
-                const SizedBox(width: 6),
-                Text(
-                  event.time,
-                  style: TextStyle(color: Colors.grey[600], fontSize: 13),
-                ),
-              ],
-            ),
-            if (event.location != null && event.location!.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Row(
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.location_on, size: 14, color: Colors.grey[500]),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      event.location!,
-                      style: TextStyle(color: Colors.grey[600], fontSize: 13),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: isSelected 
+                          ? const Color(0xFF6366F1)
+                          : const Color(0xFF1E293B),
+                    ),
+                  ),
+                  Text(
+                    description,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[500],
                     ),
                   ),
                 ],
               ),
-            ],
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: () => _addEventToCalendar(event),
-                icon: const Icon(Icons.add, size: 18),
-                label: const Text('Add to Calendar'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF10B981),
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-              ),
             ),
+            if (isSelected)
+              const Icon(Icons.check_circle, color: Color(0xFF6366F1), size: 22),
           ],
         ),
       ),

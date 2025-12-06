@@ -791,6 +791,386 @@ class TapCalAccessibilityService : AccessibilityService() {
             println("[TapCal] Button visible again")
         }
     }
+    
+    // ============================================
+    // EVENT OVERLAY - Shows swipeable cards at bottom
+    // ============================================
+    
+    private var eventsOverlay: View? = null
+    private var currentEventIndex = 0
+    private var detectedEvents: List<Map<String, String>> = emptyList()
+    
+    /**
+     * Show events as swipeable cards at the bottom of the screen (overlay mode)
+     */
+    @SuppressLint("ClickableViewAccessibility")
+    fun showEventsOverlay(events: List<Map<String, String>>) {
+        if (events.isEmpty()) {
+            showButton()
+            return
+        }
+        
+        detectedEvents = events
+        currentEventIndex = 0
+        
+        handler.post {
+            try {
+                dismissEventsOverlay()
+                
+                val wm = getSystemService(WINDOW_SERVICE) as WindowManager
+                val metrics = DisplayMetrics()
+                @Suppress("DEPRECATION")
+                wm.defaultDisplay.getRealMetrics(metrics)
+                
+                // Main container
+                val container = FrameLayout(this)
+                
+                // Semi-transparent backdrop (tappable to dismiss)
+                val backdrop = View(this).apply {
+                    setBackgroundColor(0x60000000.toInt())
+                    setOnClickListener {
+                        dismissEventsOverlay()
+                        showButton()
+                    }
+                }
+                container.addView(backdrop, FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT
+                ))
+                
+                // Bottom card container
+                val cardContainer = FrameLayout(this).apply {
+                    layoutParams = FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.WRAP_CONTENT
+                    ).apply {
+                        gravity = Gravity.BOTTOM
+                    }
+                }
+                
+                // Card background
+                val cardBg = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    cornerRadii = floatArrayOf(32f, 32f, 32f, 32f, 0f, 0f, 0f, 0f)
+                    setColor(0xFFFFFFFF.toInt())
+                }
+                cardContainer.background = cardBg
+                cardContainer.elevation = 24f
+                
+                // Card content layout
+                val cardContent = android.widget.LinearLayout(this).apply {
+                    orientation = android.widget.LinearLayout.VERTICAL
+                    setPadding(48, 32, 48, 60)
+                }
+                
+                // Header row with count
+                val headerRow = FrameLayout(this)
+                
+                val titleText = TextView(this).apply {
+                    text = "📅 ${events.size} Event${if (events.size > 1) "s" else ""} Found"
+                    setTextColor(0xFF1E293B.toInt())
+                    textSize = 18f
+                    setTypeface(null, android.graphics.Typeface.BOLD)
+                }
+                headerRow.addView(titleText, FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT
+                ).apply { gravity = Gravity.START or Gravity.CENTER_VERTICAL })
+                
+                val closeBtn = TextView(this).apply {
+                    text = "✕"
+                    setTextColor(0xFF94A3B8.toInt())
+                    textSize = 20f
+                    setPadding(16, 8, 8, 8)
+                    setOnClickListener {
+                        dismissEventsOverlay()
+                        showButton()
+                    }
+                }
+                headerRow.addView(closeBtn, FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT
+                ).apply { gravity = Gravity.END or Gravity.CENTER_VERTICAL })
+                
+                cardContent.addView(headerRow, android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                ))
+                
+                // Spacer
+                cardContent.addView(View(this), android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT, 24
+                ))
+                
+                // Event card holder (will show current event)
+                val eventHolder = FrameLayout(this)
+                eventHolder.id = View.generateViewId()
+                cardContent.addView(eventHolder, android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                ))
+                
+                // Build the event card view
+                fun buildEventCard(event: Map<String, String>, index: Int): View {
+                    val eventCard = android.widget.LinearLayout(this).apply {
+                        orientation = android.widget.LinearLayout.VERTICAL
+                        setPadding(32, 24, 32, 24)
+                        
+                        val cardShape = GradientDrawable().apply {
+                            shape = GradientDrawable.RECTANGLE
+                            cornerRadius = 20f
+                            setColor(0xFFF8FAFC.toInt())
+                        }
+                        background = cardShape
+                    }
+                    
+                    // Event title
+                    val eventTitle = TextView(this).apply {
+                        text = event["title"] ?: "Event"
+                        setTextColor(0xFF1E293B.toInt())
+                        textSize = 17f
+                        setTypeface(null, android.graphics.Typeface.BOLD)
+                        maxLines = 2
+                    }
+                    eventCard.addView(eventTitle)
+                    
+                    // Date & Time row
+                    val dateTimeRow = android.widget.LinearLayout(this).apply {
+                        orientation = android.widget.LinearLayout.HORIZONTAL
+                        setPadding(0, 16, 0, 0)
+                    }
+                    
+                    val dateText = TextView(this).apply {
+                        text = "📅 ${event["date"] ?: ""}"
+                        setTextColor(0xFF64748B.toInt())
+                        textSize = 14f
+                    }
+                    dateTimeRow.addView(dateText)
+                    
+                    val spacer = View(this)
+                    dateTimeRow.addView(spacer, android.widget.LinearLayout.LayoutParams(24, 0))
+                    
+                    val timeText = TextView(this).apply {
+                        text = "🕐 ${event["time"] ?: ""}"
+                        setTextColor(0xFF64748B.toInt())
+                        textSize = 14f
+                    }
+                    dateTimeRow.addView(timeText)
+                    
+                    eventCard.addView(dateTimeRow)
+                    
+                    // Location if present
+                    val location = event["location"]
+                    if (!location.isNullOrEmpty()) {
+                        val locText = TextView(this).apply {
+                            text = "📍 $location"
+                            setTextColor(0xFF64748B.toInt())
+                            textSize = 14f
+                            setPadding(0, 8, 0, 0)
+                        }
+                        eventCard.addView(locText)
+                    }
+                    
+                    // Add to Calendar button
+                    val addButton = TextView(this).apply {
+                        text = "➕  Add to Calendar"
+                        setTextColor(0xFFFFFFFF.toInt())
+                        textSize = 15f
+                        gravity = Gravity.CENTER
+                        setPadding(0, 28, 0, 28)
+                        
+                        val btnShape = GradientDrawable().apply {
+                            shape = GradientDrawable.RECTANGLE
+                            cornerRadius = 14f
+                            setColor(0xFF10B981.toInt())
+                        }
+                        background = btnShape
+                        
+                        setOnClickListener {
+                            addEventToCalendar(event)
+                            // Move to next event or close
+                            if (index < events.size - 1) {
+                                currentEventIndex++
+                                eventHolder.removeAllViews()
+                                eventHolder.addView(buildEventCard(events[currentEventIndex], currentEventIndex))
+                                titleText.text = "📅 ${events.size - currentEventIndex} Event${if (events.size - currentEventIndex > 1) "s" else ""} Remaining"
+                            } else {
+                                dismissEventsOverlay()
+                                showButton()
+                            }
+                        }
+                    }
+                    
+                    val btnParams = android.widget.LinearLayout.LayoutParams(
+                        android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                        android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { topMargin = 24 }
+                    eventCard.addView(addButton, btnParams)
+                    
+                    // Skip button
+                    if (events.size > 1) {
+                        val skipBtn = TextView(this).apply {
+                            text = if (index < events.size - 1) "Skip →" else "Done"
+                            setTextColor(0xFF6366F1.toInt())
+                            textSize = 14f
+                            gravity = Gravity.CENTER
+                            setPadding(0, 16, 0, 0)
+                            
+                            setOnClickListener {
+                                if (index < events.size - 1) {
+                                    currentEventIndex++
+                                    eventHolder.removeAllViews()
+                                    eventHolder.addView(buildEventCard(events[currentEventIndex], currentEventIndex))
+                                    titleText.text = "📅 ${events.size - currentEventIndex} Event${if (events.size - currentEventIndex > 1) "s" else ""} Remaining"
+                                } else {
+                                    dismissEventsOverlay()
+                                    showButton()
+                                }
+                            }
+                        }
+                        eventCard.addView(skipBtn)
+                    }
+                    
+                    return eventCard
+                }
+                
+                // Show first event
+                eventHolder.addView(buildEventCard(events[0], 0))
+                
+                // Page indicator if multiple events
+                if (events.size > 1) {
+                    val indicatorRow = android.widget.LinearLayout(this).apply {
+                        orientation = android.widget.LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER
+                        setPadding(0, 16, 0, 0)
+                    }
+                    
+                    val indicator = TextView(this).apply {
+                        text = "1 of ${events.size}"
+                        setTextColor(0xFF94A3B8.toInt())
+                        textSize = 12f
+                    }
+                    indicatorRow.addView(indicator)
+                    
+                    cardContent.addView(indicatorRow)
+                }
+                
+                cardContainer.addView(cardContent)
+                container.addView(cardContainer)
+                
+                eventsOverlay = container
+                
+                val layoutFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+                } else {
+                    @Suppress("DEPRECATION")
+                    WindowManager.LayoutParams.TYPE_SYSTEM_ALERT
+                }
+                
+                val params = WindowManager.LayoutParams(
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    layoutFlag,
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                    PixelFormat.TRANSLUCENT
+                )
+                
+                wm.addView(eventsOverlay, params)
+                println("[TapCal] Events overlay displayed with ${events.size} events")
+                
+            } catch (e: Exception) {
+                println("[TapCal] Error showing events overlay: ${e.message}")
+                e.printStackTrace()
+                showButton()
+            }
+        }
+    }
+    
+    private fun addEventToCalendar(event: Map<String, String>) {
+        try {
+            val calendar = java.util.Calendar.getInstance()
+            
+            // Parse date
+            val date = event["date"] ?: ""
+            try {
+                val dateParts = date.split("-")
+                if (dateParts.size >= 3) {
+                    calendar.set(java.util.Calendar.YEAR, dateParts[0].toInt())
+                    calendar.set(java.util.Calendar.MONTH, dateParts[1].toInt() - 1)
+                    calendar.set(java.util.Calendar.DAY_OF_MONTH, dateParts[2].toInt())
+                }
+            } catch (e: Exception) {
+                println("[TapCal] Could not parse date: $date")
+            }
+            
+            // Parse time
+            val time = event["time"] ?: "12:00"
+            try {
+                val timeLower = time.lowercase()
+                val isPM = timeLower.contains("pm")
+                val isAM = timeLower.contains("am")
+                val timeCleaned = timeLower.replace("am", "").replace("pm", "").trim()
+                val timeParts = timeCleaned.split(":", ".")
+                
+                if (timeParts.isNotEmpty()) {
+                    var hour = timeParts[0].trim().toIntOrNull() ?: 12
+                    val minute = if (timeParts.size > 1) timeParts[1].trim().toIntOrNull() ?: 0 else 0
+                    
+                    if (isPM && hour < 12) hour += 12
+                    if (isAM && hour == 12) hour = 0
+                    
+                    calendar.set(java.util.Calendar.HOUR_OF_DAY, hour)
+                    calendar.set(java.util.Calendar.MINUTE, minute)
+                }
+            } catch (e: Exception) {
+                calendar.set(java.util.Calendar.HOUR_OF_DAY, 12)
+                calendar.set(java.util.Calendar.MINUTE, 0)
+            }
+            
+            calendar.set(java.util.Calendar.SECOND, 0)
+            
+            val startMillis = calendar.timeInMillis
+            val endMillis = startMillis + 60 * 60 * 1000 // 1 hour
+            
+            val intent = Intent(Intent.ACTION_INSERT).apply {
+                data = android.provider.CalendarContract.Events.CONTENT_URI
+                putExtra(android.provider.CalendarContract.Events.TITLE, event["title"] ?: "Event")
+                putExtra(android.provider.CalendarContract.EXTRA_EVENT_BEGIN_TIME, startMillis)
+                putExtra(android.provider.CalendarContract.EXTRA_EVENT_END_TIME, endMillis)
+                putExtra(android.provider.CalendarContract.Events.ALL_DAY, false)
+                
+                event["location"]?.let { loc ->
+                    if (loc.isNotEmpty()) {
+                        putExtra(android.provider.CalendarContract.Events.EVENT_LOCATION, loc)
+                    }
+                }
+                event["description"]?.let { desc ->
+                    if (desc.isNotEmpty()) {
+                        putExtra(android.provider.CalendarContract.Events.DESCRIPTION, desc)
+                    }
+                }
+                
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            
+            startActivity(intent)
+            println("[TapCal] Calendar opened for: ${event["title"]}")
+            
+        } catch (e: Exception) {
+            println("[TapCal] Error opening calendar: ${e.message}")
+        }
+    }
+    
+    private fun dismissEventsOverlay() {
+        try {
+            eventsOverlay?.let {
+                windowManager?.removeView(it)
+            }
+        } catch (e: Exception) { }
+        eventsOverlay = null
+        detectedEvents = emptyList()
+        currentEventIndex = 0
+    }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         // Not needed for floating button approach

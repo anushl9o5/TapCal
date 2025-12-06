@@ -86,6 +86,16 @@ class MainActivity : FlutterActivity() {
                     openCalendarApp(title, date, time, location, description)
                     result.success(true)
                 }
+                "showEventsOverlay" -> {
+                    @Suppress("UNCHECKED_CAST")
+                    val eventsList = call.argument<List<Map<String, String>>>("events")
+                    if (eventsList != null) {
+                        TapCalAccessibilityService.instance?.showEventsOverlay(eventsList)
+                        result.success(true)
+                    } else {
+                        result.error("INVALID_ARGS", "Events list is null", null)
+                    }
+                }
                 else -> {
                     result.notImplemented()
                 }
