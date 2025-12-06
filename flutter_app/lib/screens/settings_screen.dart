@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/event_history.dart';
 
@@ -39,6 +40,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _hapticFeedback = value);
   }
 
+  static const _nativeChannel = MethodChannel('com.tapcal.tapcal_app/native');
+  
   Future<void> _clearHistory() async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -60,7 +63,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
 
     if (confirm == true) {
+      // Clear native SharedPreferences (where scan history is stored)
+      try {
+        await _nativeChannel.invokeMethod('clearHistory');
+      } catch (e) {
+        print('[Settings] Error clearing native history: $e');
+      }
+      
+      // Also clear Flutter SharedPreferences (legacy)
       await EventHistoryService.clearHistory();
+      
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('History cleared')),
@@ -144,7 +156,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               const ListTile(
                 title: Text('Developer'),
-                subtitle: Text('TapCal Team'),
+                subtitle: Text('SnapCal Team'),
               ),
             ],
           ),
@@ -271,4 +283,5 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 }
+
 

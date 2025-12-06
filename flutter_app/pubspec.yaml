@@ -1,5 +1,5 @@
 name: tapcal_app
-description: TapCal - AI-powered calendar assistant. Tap anywhere to create events.
+description: SnapCal - AI-powered calendar assistant. Snap any screen to find events.
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -18,6 +18,9 @@ dependencies:
   
   # Local storage for history
   shared_preferences: ^2.2.2
+  
+  # Permission handling (for notification permission on Android 13+)
+  permission_handler: ^11.1.0
   
   # Icons
   cupertino_icons: ^1.0.6

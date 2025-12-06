@@ -1,24 +1,13 @@
 import 'package:flutter/services.dart';
 import '../models/calendar_event.dart';
 
-/// Service for managing the Accessibility Service with floating button
+/// Service for managing the Accessibility Service with notification-based capture
 class AccessibilityService {
   static const MethodChannel _channel = MethodChannel('com.tapcal/accessibility');
-  static Function(String base64Image)? onScreenCaptured;
 
-  /// Initialize the service and set up listeners
+  /// Initialize the service (no longer needs screen capture callback)
   static void initialize() {
-    _channel.setMethodCallHandler((call) async {
-      switch (call.method) {
-        case 'onScreenCaptured':
-          print('[Accessibility] Screenshot received!');
-          final String? base64Image = call.arguments as String?;
-          if (base64Image != null && onScreenCaptured != null) {
-            onScreenCaptured!(base64Image);
-          }
-          break;
-      }
-    });
+    // No-op for now - notification-based flow stores events in SharedPreferences
   }
 
   /// Check if accessibility service is enabled
@@ -41,75 +30,50 @@ class AccessibilityService {
     }
   }
 
-  /// Show the floating button
-  static Future<void> showFloatingButton() async {
+  /// Start the notification service (called when accessibility is enabled)
+  static Future<void> startNotificationService() async {
     try {
-      await _channel.invokeMethod('showFloatingButton');
+      await _channel.invokeMethod('startNotificationService');
+      print('[Accessibility] Notification service started');
     } catch (e) {
-      print('[Accessibility] Error showing button: $e');
+      print('[Accessibility] Error starting notification service: $e');
     }
   }
 
-  /// Hide the floating button
-  static Future<void> hideFloatingButton() async {
+  /// Stop the notification service
+  static Future<void> stopNotificationService() async {
     try {
-      await _channel.invokeMethod('hideFloatingButton');
+      await _channel.invokeMethod('stopNotificationService');
+      print('[Accessibility] Notification service stopped');
     } catch (e) {
-      print('[Accessibility] Error hiding button: $e');
+      print('[Accessibility] Error stopping notification service: $e');
     }
   }
 
-  /// Tell native side analysis is complete - shows button again
-  static Future<void> analysisComplete() async {
+  /// Check if notification service is running
+  static Future<bool> isNotificationServiceRunning() async {
     try {
-      await _channel.invokeMethod('analysisComplete');
-      print('[Accessibility] Analysis complete, button restored');
+      final bool result = await _channel.invokeMethod('isNotificationServiceRunning');
+      return result;
     } catch (e) {
-      print('[Accessibility] Error: $e');
+      print('[Accessibility] Error checking notification service: $e');
+      return false;
     }
   }
 
   /// Open the default calendar app with event details pre-filled
-  static Future<void> openCalendarWithEvent({
-    required String title,
-    required String date,
-    required String time,
-    String? location,
-    String? description,
-  }) async {
+  static Future<void> openCalendarWithEvent(CalendarEvent event) async {
     try {
       await _channel.invokeMethod('openCalendarWithEvent', {
-        'title': title,
-        'date': date,
-        'time': time,
-        'location': location,
-        'description': description,
+        'title': event.title,
+        'date': event.date,
+        'time': event.time,
+        'location': event.location,
+        'description': event.description,
       });
       print('[Accessibility] Calendar app opened with event');
     } catch (e) {
       print('[Accessibility] Error opening calendar: $e');
-    }
-  }
-
-  /// Show detected events as swipeable cards overlay at the bottom of screen
-  /// This works as an overlay without leaving the current app
-  static Future<void> showEventsOverlay(List<CalendarEvent> events) async {
-    try {
-      // Convert events to list of maps for native
-      final eventsList = events.map((e) => {
-        'title': e.title,
-        'date': e.date,
-        'time': e.time,
-        'location': e.location ?? '',
-        'description': e.description ?? '',
-      }).toList();
-      
-      await _channel.invokeMethod('showEventsOverlay', {
-        'events': eventsList,
-      });
-      print('[Accessibility] Events overlay shown with ${events.length} events');
-    } catch (e) {
-      print('[Accessibility] Error showing events overlay: $e');
     }
   }
 }
