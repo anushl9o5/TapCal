@@ -42,3 +42,10 @@ android {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // OkHttp for native HTTP calls (API analysis without launching Flutter)
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    // JSON parsing
+    implementation("org.json:json:20231013")
+}
